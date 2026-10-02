@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<title>Ably Web Push Notifications</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			margin: 0;
+			padding: 20px;
+		}
+
+		h1 {
+			text-align: center;
+			margin-bottom: 20px;
+		}
+
+		.container {
+			display: flex;
+			gap: 20px;
+			max-width: 900px;
+			margin: 0 auto;
+		}
+
+		.controls {
+			flex: 0 0 250px;
+			padding: 15px;
+			background: #f0f0f0;
+			border-radius: 5px;
+			height: fit-content;
+		}
+
+		.controls h3 {
+			margin-top: 0;
+		}
+
+		button {
+			padding: 12px 20px;
+			margin: 5px 0;
+			cursor: pointer;
+			background: #007bff;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			width: 100%;
+			display: block;
+			font-size: 14px;
+		}
+
+		button:hover {
+			background: #0056b3;
+		}
+
+		button:disabled {
+			background: #ccc;
+			cursor: not-allowed;
+		}
+
+		#activatePushBtn {
+			background: #28a745;
+		}
+
+		#activatePushBtn:hover {
+			background: #218838;
+		}
+
+		#deactivatePushBtn {
+			background: #dc3545;
+		}
+
+		#deactivatePushBtn:hover {
+			background: #c82333;
+		}
+
+		#unsubscribeBtn {
+			background: #fd7e14;
+		}
+
+		#unsubscribeBtn:hover {
+			background: #e96b00;
+		}
+
+		#subscribeBtn {
+			background: #6f42c1;
+		}
+
+		#subscribeBtn:hover {
+			background: #5a32a3;
+		}
+
+		#clearBtn {
+			background: #6c757d;
+		}
+
+		#clearBtn:hover {
+			background: #545b62;
+		}
+
+		.output-container {
+			flex: 1;
+		}
+
+		#output {
+			padding: 15px;
+			border: 1px solid #ddd;
+			border-radius: 5px;
+			min-height: 500px;
+			max-height: 70vh;
+			overflow-y: auto;
+			background: #fff;
+		}
+
+		#output p {
+			margin: 5px 0;
+			padding: 5px;
+			background: #fff;
+			border-left: 3px solid #007bff;
+		}
+
+		.status {
+			padding: 10px;
+			margin-bottom: 10px;
+			border-radius: 4px;
+		}
+
+		.status.success {
+			background: #d4edda;
+			color: #155724;
+		}
+
+		.status.error {
+			background: #f8d7da;
+			color: #721c24;
+		}
+
+		.status.warning {
+			background: #fff3cd;
+			color: #856404;
+		}
+
+		.status.progress {
+			background: #e5e5e5;
+			color: #454545;
+		}
+	</style>
+</head>
+
+<body>
+	<h1>Ably Web Push Notifications</h1>
+
+	<div class="container">
+		<div class="controls">
+			<h3>Push Notifications</h3>
+			<button id="activatePushBtn">Activate Push</button>
+			<button id="deactivatePushBtn">Deactivate Push</button>
+			<button id="subscribeBtn">Subscribe</button>
+			<button id="unsubscribeBtn">Unsubscribe</button>
+			<button id="clearBtn">Clear</button>
+			<hr />
+			<em>
+				NOTE: In this POC, regular messages are received automatically via the WebSocket/SSE channel — no
+				explicit activation or
+				subscription calls are needed for that. The buttons below control push notification state only.
+			</em>
+		</div>
+
+
+		<div class="output-container">
+			<div id="pushStatus" class="status"></div>
+			<div id="output"></div>
+		</div>
+	</div>
+
+	<script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+	<script src="https://cdn.ably.com/lib/push.umd.min-2.js"></script>
+	<script>
+		//const channelName = 'my-first-push-channel';
+		const channelName = 'aj-001-channel-rule';
+
+		let realtimeClient;
+		let channel;
+
+		// Initialize Ably connection
+		async function getStarted() {
+			realtimeClient = new Ably.Realtime({
+				key: '7e8Jzw.yZZ8gA:3Uq4nD5Ivx2rBLLAOw3wB-BT7M5x-QHrlS4Ze7Ku-xQ',
+				// Your Ably API key (do not use API key in production, use token authentication instead)
+				clientId: 'web-push-poc-client-aj-001',
+				plugins: { Push: AblyPushPlugin },
+				pushServiceWorkerUrl: '/service-worker.js',
+				logLevel: 0
+			});
+
+			await realtimeClient.connection.once('connected');
+			log('Connected to Ably with clientId: ' + realtimeClient.clientId);
+
+			channel = realtimeClient.channels.get(channelName);
+
+			await channel.subscribe((message) => {
+				let logMessage = 'Received message: ' + message.name;
+				if (message.data) {
+					logMessage += '<br>- data: ' + JSON.stringify(message.data);
+				}
+				if (message.extras && message.extras.push) {
+					logMessage += '<br>- push: ' + message.extras.push.notification.title
+						+ ' - ' + message.extras.push.notification.body;
+				}
+				log(logMessage);
+			});
+		}
+
+		// Log channel messages to the output div
+		function log(message) {
+			output.innerHTML += '<p>' + message + '</p>';
+			console.log(message);
+			output.scrollTop = output.scrollHeight;
+		}
+
+		// Show status messages
+		function showStatus(message, type = 'success') {
+			pushStatus.style.display = 'block';
+			pushStatus.className = 'status ' + type;
+			pushStatus.textContent = message;
+		}
+
+		// Clear output log
+		function clearOutput() {
+			output.innerHTML = '';
+		}
+
+		// Activate push notifications
+		async function activatePush() {
+			try {
+				activatePushBtn.disabled = true;
+				showStatus('Activating Ably push notifications...', 'progress');
+
+				await realtimeClient.push.activate();
+
+				activatePushBtn.disabled = false;
+				showStatus('Push activated successfully for device ID: ' + realtimeClient.device().id);
+				log('Push activated successfully for device ID: ' + realtimeClient.device().id);
+			} catch (error) {
+				console.error('Error activating push:', error);
+				showStatus('Failed to activate push: ' + error.message, 'error');
+				activatePushBtn.disabled = false;
+			}
+		}
+
+		// Deactivate push notifications
+		async function deactivatePush() {
+			try {
+				deactivatePushBtn.disabled = true;
+				showStatus('Deactivating push notifications...', 'progress');
+
+				await realtimeClient.push.deactivate();
+
+				showStatus('Push notifications deactivated.', 'success');
+				deactivatePushBtn.disabled = false;
+			} catch (error) {
+				showStatus('Failed to deactivate push: ' + error.message, 'error');
+				deactivatePushBtn.disabled = false;
+			}
+		}
+
+		// Listen for messages from the service worker about push notifications
+		navigator.serviceWorker.addEventListener('message', event => {
+
+			const notification = event.data.notification;
+			switch (event.data?.type) {
+				case 'tutorial-push':
+					log('Received push notification: ' + notification.title
+						+ ' - ' + notification.body
+						+ ', with data: ' + JSON.stringify(notification.data));
+					break;
+				case 'tutorial-push-click':
+					log('Clicked push notification: ' + notification.title
+						+ ' - ' + notification.body
+						+ ', with data: ' + JSON.stringify(notification.data));
+				default:
+					console.dir(event);
+					break;
+			}
+		});
+
+
+		// Subscribe to push notifications on the channel
+		async function subscribeToChannel() {
+			try {
+				await channel.push.subscribeDevice();
+				showStatus('Subscribed to push notifications on channel: ' + channelName);
+			} catch (error) {
+				showStatus('Failed to subscribe to channel push: ' + error.message, 'error');
+				throw error;
+			}
+		}
+
+		// Unsubscribe from push notifications on the channel
+		async function unsubscribeFromChannel() {
+			try {
+				await channel.push.unsubscribeDevice();
+				showStatus('Unsubscribed from push notifications on channel: ' + channelName);
+			} catch (error) {
+				showStatus('Failed to unsubscribe from channel push: ' + error.message, 'error');
+				throw error;
+			}
+		}
+
+		const activatePushBtn = document.getElementById('activatePushBtn');
+		const deactivatePushBtn = document.getElementById('deactivatePushBtn');
+		const subscribeBtn = document.getElementById('subscribeBtn');
+		const unsubscribeBtn = document.getElementById('unsubscribeBtn');
+		const clearBtn = document.getElementById('clearBtn');
+
+		activatePushBtn.addEventListener('click', activatePush);
+		deactivatePushBtn.addEventListener('click', deactivatePush);
+		subscribeBtn.addEventListener('click', subscribeToChannel);
+		unsubscribeBtn.addEventListener('click', unsubscribeFromChannel);
+		clearBtn.addEventListener('click', clearOutput);
+
+
+		// Initialize app
+		getStarted();
+
+	</script>
+</body>
+
+</html>
